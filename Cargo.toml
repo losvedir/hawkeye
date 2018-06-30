@@ -1,0 +1,6 @@
+[package]
+name = "hawkeye"
+version = "0.1.0"
+authors = ["Gabe Durazo <gabe@mbtace.com>"]
+
+[dependencies]
