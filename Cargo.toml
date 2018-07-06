@@ -3,4 +3,9 @@ name = "hawkeye"
 version = "0.1.0"
 authors = ["Gabe Durazo <gabe@mbtace.com>"]
 
+[build-dependencies]
+protoc-rust = "2.0.2"
+
 [dependencies]
+protobuf = "2.0.2"
+reqwest = "0.8.6"
