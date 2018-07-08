@@ -1,37 +1,49 @@
+extern crate postgres;
 extern crate protobuf;
 extern crate reqwest;
 
 mod gtfs_realtime;
-mod movement;
 
-use std::{thread, time};
 use gtfs_realtime::FeedMessage;
 use gtfs_realtime::VehiclePosition_VehicleStopStatus as VehicleStatus;
+
 use std::collections::HashMap;
-use movement::Movement;
+use std::env;
+use std::time;
 use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
+use std::thread;
+
+use postgres::Connection;
+use postgres::TlsMode;
 
 type VehiclePositionMap = HashMap<String, (String, VehicleStatus)>;
 
 fn main() {
+    let db = get_db();
     let two_sec = time::Duration::from_millis(2000);
-    let mut movements = vec![];
     let mut positions = HashMap::new();
 
     loop {
-        positions = run(positions, &mut movements);
+        positions = run(&db, positions);
         thread::sleep(two_sec);
     }
 }
 
-fn run(old_positions: VehiclePositionMap, movements: &mut Vec<Movement>) -> VehiclePositionMap {
+fn run(db: &Connection, old_positions: VehiclePositionMap) -> VehiclePositionMap {
+    let mut now = time::Instant::now();
+    print!("Run loop... ");
+
     match reqwest::get("https://s3.amazonaws.com/mbta-gtfs-s3/VehiclePositions.pb") {
         Ok(mut veh_body) => {
             if veh_body.status().is_success() {
+                print!("Fetched in {:?} ms, ", elapsed_ms(&now));
+                now = time::Instant::now();
                 let mut data: Vec<u8> = vec![];
                 if let Ok(_) = veh_body.copy_to(&mut data) {
                     if let Ok(message) = protobuf::parse_from_bytes::<FeedMessage>(&data) {
-                        let new_positions = process_data(&message, old_positions, movements);
+                        let new_positions = process_data(db, &message, old_positions);
+                        print!("processed in {:?} ms\n", elapsed_ms(&now));
                         return new_positions;
                     }
                 }
@@ -45,7 +57,7 @@ fn run(old_positions: VehiclePositionMap, movements: &mut Vec<Movement>) -> Vehi
     return old_positions;
 }
 
-fn process_data(msg: &FeedMessage, old_positions: VehiclePositionMap, _movements: &mut Vec<Movement>) -> VehiclePositionMap {
+fn process_data(db: &Connection, msg: &FeedMessage, old_positions: VehiclePositionMap) -> VehiclePositionMap {
     let mut new_positions: VehiclePositionMap = HashMap::new();
 
     for entity in msg.get_entity() {
@@ -60,7 +72,7 @@ fn process_data(msg: &FeedMessage, old_positions: VehiclePositionMap, _movements
                     let vehicle_id = vehicle_descriptor.get_id();
 
                     if let Some((old_stop_id, old_status)) = old_positions.get(vehicle_id) {
-                        record_movement(vehicle_id, old_stop_id, old_status, &stop_id, &status);
+                        record_movement(db, vehicle_id, old_stop_id, old_status, &stop_id, &status);
                     }
 
                     new_positions.insert(vehicle_id.to_string(), (stop_id, status));
@@ -72,26 +84,77 @@ fn process_data(msg: &FeedMessage, old_positions: VehiclePositionMap, _movements
     return new_positions;
 }
 
-fn record_movement(vehicle_id: &str, old_stop_id: &str, old_status: &VehicleStatus, new_stop_id: &str, new_status: &VehicleStatus) {
+fn record_movement(db: &Connection, vehicle_id: &str, old_stop_id: &str, old_status: &VehicleStatus, new_stop_id: &str, new_status: &VehicleStatus) {
     if old_stop_id == new_stop_id {
         match (old_status, new_status) {
-            (VehicleStatus::INCOMING_AT, VehicleStatus::STOPPED_AT) => train_arrived(vehicle_id, new_stop_id),
-            (VehicleStatus::IN_TRANSIT_TO, VehicleStatus::STOPPED_AT) => train_arrived(vehicle_id, new_stop_id),
+            (VehicleStatus::INCOMING_AT, VehicleStatus::STOPPED_AT) => train_arrived(db, vehicle_id, new_stop_id),
+            (VehicleStatus::IN_TRANSIT_TO, VehicleStatus::STOPPED_AT) => train_arrived(db, vehicle_id, new_stop_id),
             _ => (),
         }
     } else {
         match (old_status, new_status) {
-            (VehicleStatus::STOPPED_AT, VehicleStatus::IN_TRANSIT_TO) => train_departed(vehicle_id, old_stop_id),
-            (VehicleStatus::STOPPED_AT, VehicleStatus::INCOMING_AT) => train_departed(vehicle_id, old_stop_id),
+            (VehicleStatus::STOPPED_AT, VehicleStatus::IN_TRANSIT_TO) => train_departed(db, vehicle_id, old_stop_id),
+            (VehicleStatus::STOPPED_AT, VehicleStatus::INCOMING_AT) => train_departed(db, vehicle_id, old_stop_id),
             _ => (),
         }
     }
 }
 
-fn train_arrived(vehicle_id: &str, stop_id: &str) {
-    println!("{:?} arrived at {:?} at {:?}", vehicle_id, stop_id, SystemTime::now());
+fn train_arrived(db: &Connection, vehicle_id: &str, stop_id: &str) {
+    let departed_at_null: Option<i32> = None;
+
+    let res = db.execute("
+        INSERT INTO vehicle_movements
+        (vehicle_id, stop_id, arrived_at, departed_at)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (vehicle_id, stop_id) DO UPDATE
+        SET (vehicle_id, stop_id, arrived_at, departed_at) = ($1, $2, $3, $4)
+    ", &[&vehicle_id, &stop_id, &now(), &departed_at_null]);
+
+    match res {
+        Ok(1) => (),
+        _ => println!("WARN - could not update DB for train_arrived.")
+    }
 }
 
-fn train_departed(vehicle_id: &str, stop_id: &str) {
-    println!("{:?} departed from {:?} at {:?}", vehicle_id, stop_id, SystemTime::now());
+fn train_departed(db: &Connection, vehicle_id: &str, stop_id: &str) {
+    let res = db.execute("
+        UPDATE vehicle_movements
+        SET departed_at = $1
+        WHERE vehicle_id = $2
+          AND stop_id = $3
+          AND arrived_at IS NOT NULL
+          AND departed_at IS NULL
+    ", &[&now(), &vehicle_id, &stop_id]);
+
+    match res {
+        Ok(0) => (),
+        Ok(1) => (),
+        _ => println!("WARN - could not update DB for train_departed.")
+    }
+}
+
+fn get_db() -> Connection {
+    let db_url = env::var("DATABASE_URL").expect("No DATABASE_URL ENV variable.");
+    let conn = Connection::connect(db_url, TlsMode::None).expect("Could not connect to given DATABASE_URL.");
+    conn.execute("
+        CREATE TABLE IF NOT EXISTS vehicle_movements (
+            vehicle_id varchar not null,
+            stop_id varchar not null,
+            arrived_at int,
+            departed_at int,
+            primary key (vehicle_id, stop_id)
+        )
+    ", &[]).expect("Could not initialize DB.");
+
+    conn
+}
+
+fn now() -> i32 {
+    SystemTime::now().duration_since(UNIX_EPOCH).expect("unix time can't be calculated").as_secs() as i32
+}
+
+fn elapsed_ms(start: &time::Instant) -> u64 {
+    let duration = start.elapsed();
+    duration.as_secs() * 1000 + (duration.subsec_millis() as u64)
 }
