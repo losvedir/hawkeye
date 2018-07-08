@@ -7,6 +7,7 @@ authors = ["Gabe Durazo <gabe@mbtace.com>"]
 protoc-rust = "2.0.2"
 
 [dependencies]
-postgres = "0.15"
+chrono = "0.4"
+postgres = { version = "0.15", features = ["with-chrono"] }
 protobuf = "2.0.2"
 reqwest = "0.8.6"

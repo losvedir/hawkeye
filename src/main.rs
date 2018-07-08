@@ -1,8 +1,11 @@
+extern crate chrono;
 extern crate postgres;
 extern crate protobuf;
 extern crate reqwest;
 
 mod gtfs_realtime;
+
+use chrono::prelude::*;
 
 use gtfs_realtime::FeedMessage;
 use gtfs_realtime::VehiclePosition_VehicleStopStatus as VehicleStatus;
@@ -10,8 +13,6 @@ use gtfs_realtime::VehiclePosition_VehicleStopStatus as VehicleStatus;
 use std::collections::HashMap;
 use std::env;
 use std::time;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 use std::thread;
 
 use postgres::Connection;
@@ -101,19 +102,18 @@ fn record_movement(db: &Connection, vehicle_id: &str, old_stop_id: &str, old_sta
 }
 
 fn train_arrived(db: &Connection, vehicle_id: &str, stop_id: &str) {
-    let departed_at_null: Option<i32> = None;
-
     let res = db.execute("
         INSERT INTO vehicle_movements
         (vehicle_id, stop_id, arrived_at, departed_at)
-        VALUES ($1, $2, $3, $4)
+        VALUES ($1, $2, $3, NULL)
         ON CONFLICT (vehicle_id, stop_id) DO UPDATE
-        SET (vehicle_id, stop_id, arrived_at, departed_at) = ($1, $2, $3, $4)
-    ", &[&vehicle_id, &stop_id, &now(), &departed_at_null]);
+        SET (vehicle_id, stop_id, arrived_at, departed_at) = ($1, $2, $3, NULL)
+    ", &[&vehicle_id, &stop_id, &now()]);
 
     match res {
         Ok(1) => (),
-        _ => println!("WARN - could not update DB for train_arrived.")
+        Ok(_) => println!("WARN - weird postgres result when trying to update train_arrived"),
+        Err(e) => println!("WARN - could not update DB for train_arrived: {:?}", e)
     }
 }
 
@@ -130,7 +130,8 @@ fn train_departed(db: &Connection, vehicle_id: &str, stop_id: &str) {
     match res {
         Ok(0) => (),
         Ok(1) => (),
-        _ => println!("WARN - could not update DB for train_departed.")
+        Ok(_) => println!("WARN - weird postgres result when trying to update train_departed"),
+        Err(e) => println!("WARN - could not update DB for train_departed: {:?}", e)
     }
 }
 
@@ -141,8 +142,8 @@ fn get_db() -> Connection {
         CREATE TABLE IF NOT EXISTS vehicle_movements (
             vehicle_id varchar not null,
             stop_id varchar not null,
-            arrived_at int,
-            departed_at int,
+            arrived_at timestamptz,
+            departed_at timestamptz,
             primary key (vehicle_id, stop_id)
         )
     ", &[]).expect("Could not initialize DB.");
@@ -150,8 +151,8 @@ fn get_db() -> Connection {
     conn
 }
 
-fn now() -> i32 {
-    SystemTime::now().duration_since(UNIX_EPOCH).expect("unix time can't be calculated").as_secs() as i32
+fn now() -> DateTime<Utc> {
+    Utc::now()
 }
 
 fn elapsed_ms(start: &time::Instant) -> u64 {
