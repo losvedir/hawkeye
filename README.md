@@ -2,7 +2,7 @@
 
 Needs a postgres database. On macOS, [Postgres.app](https://postgresapp.com/) is a great way to install and use it. I also recommend [Postico](https://eggerapps.at/postico/) as a friendly GUI to explore the tables. You will need to create a DB for hawkeye, e.g. with the `createdb` command.
 
-Build with `$ cargo build --release` or for macOS download a precompiled [release].
+Build with `$ cargo build --release` or for macOS download a precompiled [release](https://github.com/losvedir/hawkeye/releases).
 
 Expects a `DATABASE_URL` that points to the postgres DB you set up for it.
 
