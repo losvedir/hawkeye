@@ -57,13 +57,13 @@ pub fn get_db(db_url: &str) -> Connection {
     ", &[]).expect("Could not initialize predictions DB table.");
 
     conn.execute("
-        CREATE INDEX predictions_update_arrival
+        CREATE INDEX IF NOT EXISTS predictions_update_arrival
         ON predictions (vehicle_id, stop_id, actual_arrive_at)
         WHERE actual_arrive_at IS NULL
     ", &[]).expect("Could not add predictions_update_arrival index");
 
     conn.execute("
-        CREATE INDEX predictions_update_departure
+        CREATE INDEX IF NOT EXISTS predictions_update_departure
         ON predictions (vehicle_id, stop_id, actual_depart_at)
         WHERE actual_depart_at IS NULL
     ", &[]).expect("Could not add predictions_update_departure index");

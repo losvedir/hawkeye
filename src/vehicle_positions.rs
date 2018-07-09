@@ -129,7 +129,7 @@ fn train_departed(db: &Connection, vehicle_id: &str, stop_id: &str) {
         SET actual_depart_at = $1
         WHERE vehicle_id = $2
           AND stop_id = $3
-          AND actual_arrive_at IS NULL
+          AND actual_depart_at IS NULL
     ", &[&Utc::now(), &vehicle_id, &stop_id]);
 
     if let Err(e) = res2 {
