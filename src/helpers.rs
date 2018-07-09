@@ -39,7 +39,34 @@ pub fn get_db(db_url: &str) -> Connection {
             departed_at timestamptz,
             primary key (vehicle_id, stop_id)
         )
-    ", &[]).expect("Could not initialize DB.");
+    ", &[]).expect("Could not initialize vehicle_movements DB table.");
+
+    conn.execute("
+        CREATE TABLE IF NOT EXISTS predictions (
+            file_at timestamptz not null,
+            trip_id varchar not null,
+            vehicle_id varchar not null,
+            stop_id varchar not null,
+            stop_sequence int not null,
+            predicted_arrive_at timestamptz,
+            predicted_depart_at timestamptz,
+            actual_arrive_at timestamptz,
+            actual_depart_at timestamptz,
+            primary key (file_at, trip_id, vehicle_id, stop_id)
+        )
+    ", &[]).expect("Could not initialize predictions DB table.");
+
+    conn.execute("
+        CREATE INDEX predictions_update_arrival
+        ON predictions (vehicle_id, stop_id, actual_arrive_at)
+        WHERE actual_arrive_at IS NULL
+    ", &[]).expect("Could not add predictions_update_arrival index");
+
+    conn.execute("
+        CREATE INDEX predictions_update_departure
+        ON predictions (vehicle_id, stop_id, actual_depart_at)
+        WHERE actual_depart_at IS NULL
+    ", &[]).expect("Could not add predictions_update_departure index");
 
     conn
 }

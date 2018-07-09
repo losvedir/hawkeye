@@ -16,12 +16,12 @@ pub fn run(db: &Connection) {
     let mut positions = HashMap::new();
 
     loop {
-        positions = run_vehicle_positions(&db, positions);
+        positions = do_run(&db, positions);
         thread::sleep(two_sec);
     }
 }
 
-fn run_vehicle_positions(db: &Connection, old_positions: VehiclePositionMap) -> VehiclePositionMap {
+fn do_run(db: &Connection, old_positions: VehiclePositionMap) -> VehiclePositionMap {
     if let Some(data) = download_file("https://s3.amazonaws.com/mbta-gtfs-s3/VehiclePositions.pb") {
         let now = time::Instant::now();
 
@@ -93,6 +93,18 @@ fn train_arrived(db: &Connection, vehicle_id: &str, stop_id: &str) {
         Ok(_) => println!("WARN - weird postgres result when trying to update train_arrived"),
         Err(e) => println!("WARN - could not update DB for train_arrived: {:?}", e)
     }
+
+    let res2 = db.execute("
+        UPDATE predictions
+        SET actual_arrive_at = $1
+        WHERE vehicle_id = $2
+          AND stop_id = $3
+          AND actual_arrive_at IS NULL
+    ", &[&Utc::now(), &vehicle_id, &stop_id]);
+
+    if let Err(e) = res2 {
+        println!("Error updating arrival: {:?}", e);
+    }
 }
 
 fn train_departed(db: &Connection, vehicle_id: &str, stop_id: &str) {
@@ -110,5 +122,17 @@ fn train_departed(db: &Connection, vehicle_id: &str, stop_id: &str) {
         Ok(1) => (),
         Ok(_) => println!("WARN - weird postgres result when trying to update train_departed"),
         Err(e) => println!("WARN - could not update DB for train_departed: {:?}", e)
+    }
+
+    let res2 = db.execute("
+        UPDATE predictions
+        SET actual_depart_at = $1
+        WHERE vehicle_id = $2
+          AND stop_id = $3
+          AND actual_arrive_at IS NULL
+    ", &[&Utc::now(), &vehicle_id, &stop_id]);
+
+    if let Err(e) = res2 {
+        println!("Error updating arrival: {:?}", e);
     }
 }
