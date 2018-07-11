@@ -33,8 +33,8 @@ fn process_trip_updates(db: &Connection, msg: &FeedMessage) {
 
     let stmt = db.prepare("
         INSERT into predictions
-        (file_at, trip_id, vehicle_id, stop_id, stop_sequence, predicted_arrive_at, predicted_depart_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        (file_at, trip_id, vehicle_id, stop_id, stop_sequence, direction_id, predicted_arrive_at, predicted_depart_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     ").unwrap();
 
     for entity in msg.get_entity() {
@@ -42,8 +42,9 @@ fn process_trip_updates(db: &Connection, msg: &FeedMessage) {
         let trip_update = entity.get_trip_update();
         let trip_descriptor = trip_update.get_trip();
 
-        if !trip_descriptor.has_trip_id() { continue; }
+        if !(trip_descriptor.has_trip_id() && trip_descriptor.has_direction_id()) { continue; }
         let trip_id = trip_descriptor.get_trip_id();
+        let direction_id = trip_descriptor.get_direction_id() as i32;
 
         if !trip_update.has_vehicle() { continue; }
         let vehicle = trip_update.get_vehicle();
@@ -76,11 +77,12 @@ fn process_trip_updates(db: &Connection, msg: &FeedMessage) {
                 vehicle_id: &vehicle_id,
                 stop_id: &stop_id,
                 stop_sequence: stop_sequence,
+                direction_id: direction_id,
                 predicted_arrive_at: arrive_time,
                 predicted_depart_at: depart_time,
             };
 
-            if let Err(e) = stmt.execute(&[&file_at, &trip_id, &vehicle_id, &stop_id, &stop_sequence, &arrive_time, &depart_time]) {
+            if let Err(e) = stmt.execute(&[&file_at, &trip_id, &vehicle_id, &stop_id, &stop_sequence, &direction_id, &arrive_time, &depart_time]) {
                 println!("Could not insert prediction: {:?}", e);
             }
 
@@ -97,6 +99,7 @@ struct Prediction<'a, 'b> {
     vehicle_id: &'a str,
     stop_id: &'a str,
     stop_sequence: i32,
+    direction_id: i32,
     predicted_arrive_at: Option<DateTime<Utc>>,
     predicted_depart_at: Option<DateTime<Utc>>,
 }

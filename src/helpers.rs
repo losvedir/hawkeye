@@ -47,6 +47,7 @@ pub fn get_db(db_url: &str) -> Connection {
             trip_id varchar not null,
             vehicle_id varchar not null,
             stop_id varchar not null,
+            direction_id int not null,
             stop_sequence int not null,
             predicted_arrive_at timestamptz,
             predicted_depart_at timestamptz,
