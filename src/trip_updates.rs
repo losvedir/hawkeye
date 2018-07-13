@@ -87,6 +87,28 @@ fn process_trip_updates(db: &Connection, msg: &FeedMessage) {
         Ok(n) => println!("Added {:?} predictions", n),
         Err(e) => println!("Could not add predictions: {:?}", e)
     }
+
+    let stmt = db.execute("
+        UPDATE predictions p
+        SET nth_at_stop = p2.rank
+        FROM (
+            SELECT
+                file_at, trip_id, vehicle_id, stop_id,
+                rank() OVER (PARTITION BY file_at, stop_id ORDER BY LEAST(predicted_arrive_at, predicted_depart_at) ASC)
+            FROM predictions
+            WHERE file_at = $1
+        ) AS p2
+        WHERE p.file_at = p2.file_at
+          AND p.trip_id = p2.trip_id
+          AND p.vehicle_id = p2.vehicle_id
+          AND p.stop_id = p2.stop_id
+        ;
+    ", &[&file_at]);
+
+    match stmt {
+        Ok(n) => println!("Updated {:?} predictions with nth_at_stop", n),
+        Err(e) => println!("Error updating: {:?}", e)
+    }
 }
 
 struct Prediction<'a, 'b> {

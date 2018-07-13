@@ -51,6 +51,7 @@ pub fn get_db(db_url: &str) -> Connection {
             stop_sequence int not null,
             predicted_arrive_at timestamptz,
             predicted_depart_at timestamptz,
+            nth_at_stop int,
             actual_arrive_at timestamptz,
             actual_depart_at timestamptz,
             primary key (file_at, trip_id, vehicle_id, stop_id)
@@ -68,6 +69,11 @@ pub fn get_db(db_url: &str) -> Connection {
         ON predictions (vehicle_id, stop_id, actual_depart_at)
         WHERE actual_depart_at IS NULL
     ", &[]).expect("Could not add predictions_update_departure index");
+
+    conn.execute("
+        CREATE INDEX IF NOT EXISTS predictions_file_at_idx
+        ON predictions (file_at)
+    ", &[]).expect("Could not add predictions_file_at_idx");
 
     conn
 }
