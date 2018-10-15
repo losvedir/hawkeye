@@ -3,17 +3,14 @@ use postgres::TlsMode;
 use reqwest;
 use std::time;
 
-pub fn download_file(url: &str) -> Option<Vec<u8>> {
+pub fn download_file(url: &str) -> Option<String> {
     let now = time::Instant::now();
 
     match reqwest::get(url) {
         Ok(mut body) => {
             if body.status().is_success() {
-                let mut data: Vec<u8> = vec![];
-                if let Ok(_) = body.copy_to(&mut data) {
-                    println!("Downloaded {:?} in {:?} ms, is {:?} bytes.", url, elapsed_ms(&now), data.len());
-                    return Some(data);
-                }
+                println!("Downloaded {:?} in {:?} ms.", url, elapsed_ms(&now));
+                return body.text().ok();
             } else {
                 println!("Error downloading {:?}: response was {:?}.", url, body.status());
             }
@@ -26,7 +23,7 @@ pub fn download_file(url: &str) -> Option<Vec<u8>> {
 
 pub fn elapsed_ms(start: &time::Instant) -> u64 {
     let duration = start.elapsed();
-    duration.as_secs() * 1000 + (duration.subsec_millis() as u64)
+    duration.as_secs() * 1000000 + (duration.subsec_micros() as u64)
 }
 
 pub fn get_db(db_url: &str) -> Connection {
@@ -51,6 +48,7 @@ pub fn get_db(db_url: &str) -> Connection {
             stop_sequence int not null,
             predicted_arrive_at timestamptz,
             predicted_depart_at timestamptz,
+            boarding_status varchar,
             nth_at_stop int,
             actual_arrive_at timestamptz,
             actual_depart_at timestamptz,

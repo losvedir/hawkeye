@@ -1,12 +1,15 @@
 extern crate chrono;
 extern crate postgres;
-extern crate protobuf;
 extern crate reqwest;
+extern crate serde;
+extern crate serde_json;
+#[macro_use] extern crate serde_derive;
 
 mod helpers;
 mod gtfs_realtime;
 mod trip_updates;
 mod vehicle_positions;
+
 
 use std::env;
 use std::thread;
